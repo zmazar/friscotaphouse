@@ -1,5 +1,6 @@
 package com.friscotaphouse.beer;
 
+import android.app.Activity;
 import android.app.ProgressDialog;
 import android.app.SearchManager;
 import android.content.Context;
@@ -7,6 +8,7 @@ import android.content.Intent;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.support.v4.app.DialogFragment;
+import android.support.v4.app.FragmentManager;
 import android.support.v4.app.ListFragment;
 import android.util.Log;
 import android.view.Menu;
@@ -28,6 +30,7 @@ import org.jsoup.select.Elements;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.concurrent.ExecutionException;
 
 /**
  * Created by Zach on 8/8/2015.
@@ -35,6 +38,7 @@ import java.util.Collections;
 public class BeerListFragment extends ListFragment implements SearchView.OnQueryTextListener {
     private static final String TAG = "FriscoUtil BeerFragment";
     private ArrayList<Beer> mDisplayedList;
+    private ArrayList<Beer> mNewTappedBeers;
     private BeerAdapter mAdapter;
     private BeerDataSource mDataSource;
     private String mTableName;
@@ -83,6 +87,14 @@ public class BeerListFragment extends ListFragment implements SearchView.OnQuery
         mDisplayedList = mDataSource.getAllBeers();
         mDataSource.close();
 
+        Activity a = getActivity();
+
+        if(a == null) {
+            FriscoUtil.toast(a, "Activity is null!");
+        }
+        else {
+            FriscoUtil.toast(a, "Activity NOT NULL");
+        }
         // Create the beer adapter, and set it.
         mAdapter = new BeerAdapter(
                 getActivity(),
@@ -94,8 +106,31 @@ public class BeerListFragment extends ListFragment implements SearchView.OnQuery
         // Setup the list adapter
         setListAdapter(mAdapter);
 
-        // Run the update task
-        new RemoteUpdateTask().execute();
+        try {
+            // Run the update task
+            new RemoteUpdateTask().execute().get();
+
+            // Display an alert dialog to notify how many new beers
+            // were found on refresh.
+            if (mNumNewBeers > 0) {
+                // Create the beers tapped dialogue fragment and display it
+                DialogFragment f = BeersTappedDialog.newInstance(mNewTappedBeers);
+                FragmentManager fm = getFragmentManager();
+
+                if (fm == null) {
+                    FriscoUtil.toast(getActivity(), "FragmentManager is NULL");
+                } else {
+                    FriscoUtil.toast(getActivity(), "FragmentManager NOT NULL");
+                    f.show(fm, TAG);
+                }
+            }
+        }
+        catch(ExecutionException execution) {
+            Log.d(TAG, "Execution of remote update failed");
+        }
+        catch(InterruptedException interrupt){
+            Log.d(TAG, "Interrupted remote update");
+        }
     }
 
     @Override
@@ -345,23 +380,14 @@ public class BeerListFragment extends ListFragment implements SearchView.OnQuery
         @Override
         protected void onPostExecute(ArrayList<Beer> listItems) {
             Log.d(TAG, "Put " + listItems.size() + " beers in the list");
-            ArrayList<Beer> newTappedBeers;
 
             if(listItems.size() > 0) {
                 // Now we need to make a comparison, and find our new beers
-                newTappedBeers = compareAndUpdate(listItems);
-                mNumNewBeers = newTappedBeers.size();
+                mNewTappedBeers = compareAndUpdate(listItems);
+                mNumNewBeers = mNewTappedBeers.size();
 
                 // Update the displayed list
                 mDisplayedList = listItems;
-
-                // Display an alert dialog to notify how many new beers
-                // were found on refresh.
-                if(mNumNewBeers > 0) {
-                    // Create the beers tapped dialogue fragment and display it
-                    DialogFragment f = BeersTappedDialog.newInstance(newTappedBeers);
-                    f.show(getFragmentManager(), TAG);
-                }
 
                 Collections.sort(mDisplayedList, new BeerSort());
 
